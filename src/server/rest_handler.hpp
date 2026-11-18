@@ -125,7 +125,11 @@ public:
 
 private:
     bool ensure_model_loaded(const std::string& model_tag,
-                             const std::string& request_backend = "");
+                             const std::string& request_backend = "",
+                             int request_context = -1);
+    json describe_model(const std::string& model_tag, const std::string& request_backend = "");
+    bool prepare_request_context(const json& request, const std::string& model_tag,
+                                 int& context, const std::function<void(const json&)>& send_response);
     bool is_known_model(const std::string& model_tag);
     void ensure_asr_model_loaded(const std::string& model_tag);
     void ensure_embed_model_loaded(const std::string& model_tag);
@@ -174,5 +178,9 @@ private:
     std::string backend;
     /// \brief the backend the currently loaded model was asked for
     std::string current_backend;
+    int current_context_request = -1;
+    // GET /api/ps must not race with model replacement on the NPU queue.
+    std::mutex running_model_mutex;
+    json running_models = json::array();
     PromptCache prompt_cache;
 };

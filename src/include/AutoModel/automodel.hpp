@@ -519,6 +519,10 @@ public:
 	/// \return the max length
 	unsigned int get_max_length() const { return MAX_L; }
 
+	/// \brief Effective loaded window, including the backend's decode ceiling.
+	/// \note Non-virtual: do not change the prebuilt engine ABI.
+	unsigned int get_runtime_context_length() const { return decode_cap(); }
+
 	/// \brief Show the model info
 	/// \return the model info
 	virtual std::string show_model_info();

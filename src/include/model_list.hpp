@@ -275,18 +275,15 @@ class model_list {
                 {"object", "list" }
             };
 
-            std::time_t now = std::time(nullptr);
-
             for (const auto& [model_type, model_subset] : this->config["models"].items()) {
                 if (model_type == "whisper-v3") continue;
                 else if (model_type == "embed-gemma") continue;
                 else if (model_type == "d3") continue;   // decision models answer /v1/systemone only
                 for (const auto& [size, model_info] : model_subset.items()) {
-                    // id uses the same "type:size" convention; created uses current epoch seconds
+                    // The catalog has no creation time; do not fabricate one per request.
                     nlohmann::json model_entry = {
                         {"id", model_type + ":" + size},
                         {"object", "model"},
-                        {"created", static_cast<long long>(now)},
                         {"owned_by", "FastFlowLM"}
                     };
                     response["data"].push_back(model_entry);

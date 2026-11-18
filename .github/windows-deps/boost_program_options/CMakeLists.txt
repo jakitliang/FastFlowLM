@@ -10,6 +10,7 @@ if(NOT BOOST_ROOT)
     message(FATAL_ERROR "Set BOOST_ROOT to the extracted Boost source tree")
 endif()
 
+file(TO_CMAKE_PATH "${BOOST_ROOT}" BOOST_ROOT)
 file(GLOB _po_sources ${BOOST_ROOT}/libs/program_options/src/*.cpp)
 add_library(boost_program_options STATIC ${_po_sources})
 target_include_directories(boost_program_options PRIVATE ${BOOST_ROOT})

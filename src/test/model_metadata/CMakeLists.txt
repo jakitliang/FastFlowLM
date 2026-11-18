@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.22)
+project(flm_model_metadata_tests LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+add_executable(test_model_metadata test_model_metadata.cpp)
+target_include_directories(test_model_metadata PRIVATE ../../include ../../server)
+enable_testing()
+add_test(NAME model_metadata COMMAND test_model_metadata)
