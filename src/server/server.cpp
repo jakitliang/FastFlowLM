@@ -7,6 +7,7 @@
  *  \version 0.9.24
  */
 #include "server.hpp"
+#include "request_options.hpp"
 #include "rest_handler.hpp"
 #include <sstream>
 #include <thread>
@@ -639,7 +640,10 @@ bool WebServer::handle_request(http::request<http::string_body>& req,
     }
 
     // Route lookup
-    std::string key = std::string(req.method_string()) + " " + std::string(req.target());
+    const std::string_view target(req.target().data(), req.target().size());
+    const std::string_view path = target.substr(0, target.find('?'));
+    const bool model_discovery = req.method() == http::verb::get && path == "/v1/models";
+    std::string key = std::string(req.method_string()) + " " + std::string(model_discovery ? path : target);
     auto it = routes.find(key);
     if (it == routes.end()) {
         // No route: respond 404 synchronously.
@@ -651,7 +655,8 @@ bool WebServer::handle_request(http::request<http::string_body>& req,
     }
 
     // Decide if this handler needs exclusive NPU access.
-    bool needs_npu = requires_npu_access(std::string(req.method_string()), std::string(req.target()));
+    bool needs_npu = !model_discovery && path != "/api/ps" &&
+        requires_npu_access(std::string(req.method_string()), std::string(target));
 
     // Store stable pointers for deferred execution to avoid reference lifetime issues.
     auto* req_ptr = &req;
@@ -969,8 +974,10 @@ std::unique_ptr<WebServer> create_lm_server(model_list& models, ModelDownloader&
             std::function<void(const json&, bool)> send_streaming_response,
             std::shared_ptr<HttpSession> session,
             std::shared_ptr<CancellationToken> cancellation_token) {
-                json request_json;
-                rest_handler->handle_models_openai(request_json, send_response, send_streaming_response);
+                const std::string_view target(req.target().data(), req.target().size());
+                rest_handler->handle_models_openai(
+                    flm::http_guard::query_has(target, "include=capabilities"),
+                    flm::http_guard::query_has(target, "installed=true"), send_response);
         });
 
     server->register_handler("POST", "/v1/embeddings",

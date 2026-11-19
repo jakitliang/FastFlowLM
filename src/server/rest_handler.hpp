@@ -67,9 +67,8 @@ public:
                       std::function<void(const json&)> send_response,
                       StreamResponseCallback send_streaming_response);
     
-    void handle_models_openai(const json& request,
-                            std::function<void(const json&)> send_response,
-                            StreamResponseCallback send_streaming_response);
+    void handle_models_openai(bool include_capabilities, bool installed_only,
+                              std::function<void(const json&)> send_response);
 
     void handle_ps(const json& request,
                     std::function<void(const json&)> send_response,
@@ -123,7 +122,9 @@ public:
 
 private:
     bool ensure_model_loaded(const std::string& model_tag,
-                             const std::string& request_backend = "");
+                             const std::string& request_backend = "",
+                             std::optional<int> requested_num_ctx = std::nullopt,
+                             const char* num_ctx_param = "num_ctx");
     bool is_known_model(const std::string& model_tag);
     void ensure_asr_model_loaded(const std::string& model_tag);
     void ensure_embed_model_loaded(const std::string& model_tag);
@@ -144,9 +145,12 @@ private:
     flm_rt::device* npu_device_inst;
     // Non-RAI path: owned device so constructor errors propagate.
     std::optional<flm_rt::device> owned_device;
+    std::mutex loaded_model_status_mutex;
+    std::optional<json> loaded_model_status;
     model_list& supported_models;
     ModelDownloader& downloader;
     std::string current_model_tag;
+    std::optional<int> current_requested_num_ctx;
     std::string default_model_tag;
     bool modelscope;
     bool asr;

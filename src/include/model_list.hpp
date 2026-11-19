@@ -9,12 +9,15 @@
 #include <algorithm>
 #include <iostream>
 #include <fstream>
+#include <functional>
 #include <string>
 #include <vector>
 #include <any>
 #include <unordered_set>
 #include <filesystem>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 // Only the header_print* macros are needed here. Including utils/utils.hpp
@@ -243,7 +246,12 @@ class model_list {
 
         /// \brief get all the models
         /// \return all the models in json
-        nlohmann::json get_all_models_openai() {
+        using model_capabilities_t = std::function<nlohmann::json(
+            const nlohmann::json&, const std::filesystem::path&, const std::filesystem::path&)>;
+        using model_filter_t = std::function<bool(const std::string&)>;
+
+        nlohmann::json get_all_models_openai(const model_capabilities_t& capabilities = {},
+                                          const model_filter_t& filter = {}) const {
             nlohmann::json response = {
                 {"object", "list"},
                 {"data", nlohmann::json::array()},
@@ -257,13 +265,27 @@ class model_list {
                 else if (model_type == "embed-gemma") continue;
                 else if (model_type == "d3") continue;   // decision models answer /v1/systemone only
                 for (const auto& [size, model_info] : model_subset.items()) {
+                    const std::string tag = model_type + ":" + size;
+                    if (filter && !filter(tag)) continue;
                     // id uses the same "type:size" convention; created uses current epoch seconds
                     nlohmann::json model_entry = {
-                        {"id", model_type + ":" + size},
+                        {"id", tag},
                         {"object", "model"},
                         {"created", static_cast<long long>(now)},
                         {"owned_by", "FastFlowLM"}
                     };
+                    if (capabilities) {
+                        const auto entry = this->resolve_source(tag, model_info);
+                        const auto package = std::filesystem::path(this->model_root_path) /
+                                             entry.at("name").get<std::string>();
+                        auto load_package = package;
+                        if (const auto base = this->get_base_model(tag)) {
+                            const auto base_entry = this->resolve_source(*base, *this->find_entry(*base));
+                            load_package = std::filesystem::path(this->model_root_path) /
+                                           base_entry.at("name").get<std::string>();
+                        }
+                        model_entry["flm"] = capabilities(entry, package, load_package);
+                    }
                     response["data"].push_back(model_entry);
                 }
             }
@@ -337,6 +359,7 @@ class model_list {
         ///       pull the files on disk are what say which source was pulled.
         void choose_source(const std::string& tag, std::optional<bool> preferred) {
             const std::string new_tag = this->rectify_model_tag(tag);
+            std::lock_guard lock(*this->source_choice_mutex_);
             if (preferred) this->source_choice_[new_tag] = *preferred;
             else this->source_choice_.erase(new_tag);
         }
@@ -357,6 +380,8 @@ class model_list {
         std::string platform_;
         /// \brief the source a pull has settled on, by tag
         std::map<std::string, bool> source_choice_;
+        // Runner copies the catalog at startup; keep its existing copy semantics.
+        std::shared_ptr<std::mutex> source_choice_mutex_ = std::make_shared<std::mutex>();
         /// \brief the backend ids this build links
         /// \note Spelled as plain strings rather than reached through
         ///       flm::backend: AutoModel/model_backend.hpp pulls in causal_lm
@@ -457,10 +482,15 @@ class model_list {
             const nlohmann::json overlay = *preferred;
             entry.erase(preferred);
 
+            std::optional<bool> source_choice;
+            {
+                std::lock_guard lock(*this->source_choice_mutex_);
+                if (const auto chosen = this->source_choice_.find(tag);
+                    chosen != this->source_choice_.end()) source_choice = chosen->second;
+            }
             bool use_preferred;
-            if (const auto chosen = this->source_choice_.find(tag);
-                chosen != this->source_choice_.end()) {
-                use_preferred = chosen->second;
+            if (source_choice) {
+                use_preferred = *source_choice;
             } else {
                 const auto own = files_only_in(overlay, entry);
                 const auto root = std::filesystem::path(this->model_root_path) /

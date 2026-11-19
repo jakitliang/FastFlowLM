@@ -7,6 +7,8 @@
  *  \version 0.9.24
  */
 #include "rest_handler.hpp"
+#include "request_options.hpp"
+#include "model_metadata.hpp"
 #include "wstream_buf.hpp"
 #include "streaming_ostream.hpp"
 #include "streaming_ostream_openai.hpp"
@@ -16,6 +18,7 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <ctime>
 #include <iomanip>
 #include <limits>
 #include <locale>
@@ -23,6 +26,15 @@
 #include "server.hpp"
 
 namespace {
+class ContextOverrideError : public std::runtime_error {
+public:
+    ContextOverrideError(const std::string& message, int code, const char* param)
+        : std::runtime_error(message), response(flm::http_guard::error_body(
+              message, code, param, code >= 500 ? "server_error" : "invalid_request_error")) {}
+
+    const json response;
+};
+
 json ModelErrorResponse(const ModelRequestError& error) {
     return {{"error", {{"message", error.what()},
                        {"type", error.type()},
@@ -609,7 +621,9 @@ RestHandler::~RestHandler() = default;
 ///@brief Ensure the model is loaded
 ///@param model_tag the model tag
 bool RestHandler::ensure_model_loaded(const std::string& model_tag,
-                                      const std::string& request_backend) {
+                                      const std::string& request_backend,
+                                      std::optional<int> requested_num_ctx,
+                                      const char* num_ctx_param) {
     // Refuse a name the catalog does not have before anything resolves it;
     // an unknown name used to load a substitute model (and on dev04 could
     // end the process). Checked after rectify_model_tag, as get_model_info
@@ -626,7 +640,9 @@ bool RestHandler::ensure_model_loaded(const std::string& model_tag,
     // Nothing was chosen, so there is nothing to load; succeed only if a
     // model is in fact loaded.
     if (model_tag == "model-faker") {
-        return auto_chat_engine != nullptr;
+        if (!auto_chat_engine) return false;
+        const auto loaded_tag = current_model_tag;
+        return ensure_model_loaded(loaded_tag, request_backend, requested_num_ctx, num_ctx_param);
     }
 
     // A per-request "backend" overrides --backend; either one differing from
@@ -636,7 +652,26 @@ bool RestHandler::ensure_model_loaded(const std::string& model_tag,
     // Compared in its resolved form, which is what current_model_tag holds, so
     // "llama3.2" or "Ollama/llama3.2:1b" does not reload llama3.2:1b each time.
     const std::string resolved_tag = supported_models.rectify_model_tag(model_tag);
-    if (current_model_tag != resolved_tag || current_backend != requested_backend) {
+    // Keep the requested value, including omission, separate from the loaded
+    // length. A clamped request can reuse its engine; an omitted override must
+    // still load the original server/catalog default.
+    if (!auto_chat_engine || current_model_tag != resolved_tag || current_backend != requested_backend ||
+        current_requested_num_ctx != requested_num_ctx) {
+        const auto check_limit = [&](int limit) {
+            if (*requested_num_ctx > limit)
+                throw ContextOverrideError("Requested context length " + std::to_string(*requested_num_ctx) +
+                                           " exceeds the supported limit of " + std::to_string(limit) +
+                                           " tokens for " + resolved_tag + ".", 400, num_ctx_param);
+        };
+        if (requested_num_ctx) {
+            if (!flm::supports_num_ctx(supported_models.get_model_info(resolved_tag).second)) {
+                throw ContextOverrideError("Context window overrides are not supported by " + resolved_tag + ".",
+                                           400, num_ctx_param);
+            }
+            if (const auto limit = flm::model_position_limit(supported_models.get_load_path(resolved_tag))) {
+                check_limit(*limit);
+            }
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         // The old model is released before the new one is built, so from here
         // on nothing is loaded until the load below succeeds. Record that now:
@@ -645,9 +680,14 @@ bool RestHandler::ensure_model_loaded(const std::string& model_tag,
         // The device is owned by main() and shared with every engine, so it is
         // deliberately left alone; releasing the engine is what frees the
         // hardware context.
+        {
+            std::lock_guard lock(this->loaded_model_status_mutex);
+            this->loaded_model_status.reset();
+        }
         this->auto_chat_engine.reset();
         this->current_model_tag = "model-faker";
         this->current_backend.clear();
+        this->current_requested_num_ctx.reset();
         // The cached conversation lived in the engine just released.
         this->prompt_cache.reset();
         try {
@@ -665,11 +705,31 @@ bool RestHandler::ensure_model_loaded(const std::string& model_tag,
                     throw std::runtime_error(ensure_tag + " is incompatible with this version of FastFlowLM");
             }
             auto [new_ensure_tag, model_info] = supported_models.get_model_info(ensure_tag);
+            const auto load_path = supported_models.get_load_path(new_ensure_tag);
+            int load_context = ctx_length;
+            if (requested_num_ctx) {
+                constexpr int minimum = 512;  // same floor as the server's --ctx-len
+                const int catalog_context = model_info.at("default_context_length").get<int>();
+                const int upper = flm::model_position_limit(load_path).value_or(std::max(catalog_context, ctx_length));
+                check_limit(upper);
+                load_context = std::min(std::max(*requested_num_ctx, minimum), upper);
+            }
             engine->set_server_mode(true);
             engine->configure_parameter("img_pre_resize", this->img_pre_resize);
             engine->set_prefix_limits(this->prefix_cache_mb, this->prefix_slots, this->prefix_min_gain);
             const auto load_started = std::chrono::steady_clock::now();
-            engine->load_model(supported_models.get_load_path(new_ensure_tag), model_info, ctx_length, preemption, requested_backend);
+            try {
+                engine->load_model(load_path, model_info, load_context, preemption, requested_backend);
+            } catch (const std::out_of_range& e) {
+                // Backend context limits are rejected by the existing loader.
+                if (!requested_num_ctx) throw;
+                throw ContextOverrideError("Context override rejected for " + ensure_tag + ": " + e.what(),
+                                           400, num_ctx_param);
+            }
+            const auto actual_context = engine->get_max_length();
+            if (requested_num_ctx && actual_context < static_cast<unsigned int>(*requested_num_ctx)) {
+                check_limit(static_cast<int>(actual_context));
+            }
             report_load_time(load_started);
 
             // Per model, not per process: the flash models take 1024-token
@@ -678,12 +738,37 @@ bool RestHandler::ensure_model_loaded(const std::string& model_tag,
             this->prefill_chunk_len = this->prefill_chunk_len_arg != -1
                 ? this->prefill_chunk_len_arg
                 : model_info["max_prefill_len"].get<int>();
+            json status = {
+                {"name", ensure_tag},
+                {"model", ensure_tag},
+                {"size", model_info["size"]},
+                {"details", model_info["details"]},
+                {"context_length", actual_context},
+            };
+            if (requested_num_ctx) {
+                status["requested_context_length"] = *requested_num_ctx;
+                if (actual_context != static_cast<unsigned int>(*requested_num_ctx)) {
+                    header_print("WARNING", "Requested context length " << *requested_num_ctx
+                                 << " tokens; " << ensure_tag << " loaded with " << actual_context << " tokens");
+                }
+            }
             this->auto_chat_engine = std::move(engine);
             this->current_model_tag = ensure_tag;
             this->current_backend = requested_backend;
+            this->current_requested_num_ctx = requested_num_ctx;
+            {
+                std::lock_guard lock(this->loaded_model_status_mutex);
+                this->loaded_model_status = std::move(status);
+            }
+        }
+        catch (const ContextOverrideError&) {
+            throw;
         }
         catch (const std::exception& e) {
             header_print("ERROR", "Failed to load model: " + std::string(e.what()));
+            if (requested_num_ctx)
+                throw ContextOverrideError("Failed to load " + resolved_tag + " with context override " +
+                                           std::to_string(*requested_num_ctx) + ".", 500, num_ctx_param);
             return false;
         }
     }
@@ -1130,10 +1215,27 @@ void RestHandler::handle_chat(const json& request,
         std::string model = request.value("model", current_model_tag);
         const std::string request_backend = request.value("backend", std::string());
         json options = request.value("options", json::object());
+        if (!options.is_object()) {
+            send_response(flm::http_guard::error_body("'options' must be an object.", 400, "options"));
+            return;
+        }
+        std::optional<int> requested_num_ctx;
+        if (auto bad = flm::http_guard::parse_num_ctx(options, "options.num_ctx", requested_num_ctx)) {
+            send_response(*bad);
+            return;
+        }
         int length_limit = options.value("num_predict", 4096);
 
         auto load_start_time = time_utils::now();
-        if (!ensure_model_loaded(model, request_backend)) {
+        if (requested_num_ctx && !is_known_model(model)) {
+            send_response(UnknownModelResponse(model));
+            return;
+        }
+        if (!ensure_model_loaded(model, request_backend, requested_num_ctx, "options.num_ctx")) {
+            if (requested_num_ctx) {
+                send_response(ModelLoadFailedResponse(model));
+                return;
+            }
             json error_response = {{"error", "Failed to load " + model + " model!"}};
             send_response(error_response);
             return;
@@ -1238,6 +1340,8 @@ void RestHandler::handle_chat(const json& request,
             // std::cout << "history: " << history.first << std::endl;
             this->auto_chat_engine->clear_context();
         }
+    } catch (const ContextOverrideError& e) {
+        send_response(e.response);
     } catch (const std::exception& e) {
         json error_response = ExceptionResponse(e);
         send_response(error_response);
@@ -1354,15 +1458,24 @@ void RestHandler::handle_version(const json& request,
 }
 
 ///@brief Handle the models request (open ai)
-///@param request the request
-///@param send_response the send response
-///@param send_streaming_response the send streaming response
-void RestHandler::handle_models_openai(const json& request,
-    std::function<void(const json&)> send_response,
-    StreamResponseCallback send_streaming_response) {
+void RestHandler::handle_models_openai(bool include_capabilities, bool installed_only,
+    std::function<void(const json&)> send_response) {
     try {
-        json models = supported_models.get_all_models_openai();
-        send_response(models);
+        model_list::model_filter_t filter;
+        if (installed_only) {
+            filter = [this](const std::string& tag) {
+                try {
+                    return downloader.is_model_downloaded(tag, /*sub_process_mode=*/true, /*fast_check=*/true)
+                        == ModelDownloader::ModelStatus::Ready;
+                } catch (const std::exception& e) {
+                    header_print_r("WARNING", "Cannot check local model " << tag << ": " << e.what());
+                    return false;
+                }
+            };
+        }
+        model_list::model_capabilities_t capabilities;
+        if (include_capabilities) capabilities = flm::model_capabilities;
+        send_response(supported_models.get_all_models_openai(capabilities, filter));
     }
     catch (const std::exception& e) {
         json error_response = { {"error", e.what()} };
@@ -1378,50 +1491,28 @@ void RestHandler::handle_ps(const json& request,
                              std::function<void(const json&)> send_response,
                              StreamResponseCallback send_streaming_response) {
     try {
-        // Generate expires_at timestamp (1 hour from now)
-        auto now = std::chrono::system_clock::now();
-        auto expires_time = now + std::chrono::hours(1);
-        auto expires_time_t = std::chrono::system_clock::to_time_t(expires_time);
-        auto expires_tp = std::chrono::system_clock::from_time_t(expires_time_t);
-        auto fractional_seconds = std::chrono::duration_cast<std::chrono::microseconds>(expires_time - expires_tp).count();
-        
-        // Get local time and timezone offset
-        std::tm* local_tm = std::localtime(&expires_time_t);
-        std::tm* utc_tm = std::gmtime(&expires_time_t);
-        
-        // Calculate timezone offset in minutes
-        int offset_minutes = (local_tm->tm_hour - utc_tm->tm_hour) * 60 + (local_tm->tm_min - utc_tm->tm_min);
-        if (local_tm->tm_mday != utc_tm->tm_mday) {
-            offset_minutes += (local_tm->tm_mday > utc_tm->tm_mday) ? 1440 : -1440;
+        std::optional<json> status;
+        {
+            std::lock_guard lock(this->loaded_model_status_mutex);
+            status = this->loaded_model_status;
         }
-        
-        std::stringstream expires_ss;
-        expires_ss.imbue(std::locale::classic()); // Use C locale to avoid commas
-        expires_ss << std::put_time(local_tm, "%Y-%m-%dT%H:%M:%S");
-        expires_ss << "." << std::setfill('0') << std::setw(5) << (fractional_seconds / 40); // 5 decimal places
-        
-        // Format timezone offset
-        int offset_hours = offset_minutes / 60;
-        int offset_mins = abs(offset_minutes % 60);
-        expires_ss << (offset_minutes >= 0 ? "+" : "-") 
-                  << std::setfill('0') << std::setw(2) << abs(offset_hours)
-                  << ":" << std::setfill('0') << std::setw(2) << offset_mins;
-        
-        std::string expires_at = expires_ss.str();
-        
-        auto [new_current_model_tag, model_info] = supported_models.get_model_info(current_model_tag);
-        json response = {
-            {"models", json::array({
-                {
-                    {"name", current_model_tag},
-                    {"model", current_model_tag},
-                    {"size", model_info["size"]},
-                    {"details", model_info["details"]},
-                    {"expires_at", expires_at},
-                }
-            })}
-        };
-        // std::cout << "response: " << response.dump(4) << std::endl;
+        json response = {{"models", json::array()}};
+        if (status) {
+            const auto expires = std::chrono::system_clock::to_time_t(
+                std::chrono::system_clock::now() + std::chrono::hours(1));
+            std::tm utc{};
+#ifdef _WIN32
+            if (gmtime_s(&utc, &expires) != 0)
+#else
+            if (gmtime_r(&expires, &utc) == nullptr)
+#endif
+                throw std::runtime_error("Cannot format model expires_at");
+            std::ostringstream formatted;
+            formatted.imbue(std::locale::classic());
+            formatted << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
+            (*status)["expires_at"] = formatted.str();
+            response["models"].push_back(std::move(*status));
+        }
         send_response(response);
     } catch (const std::exception& e) {
         json error_response = ExceptionResponse(e);
@@ -1505,6 +1596,11 @@ void RestHandler::handle_openai_chat_completion(const json& request,
         int length_limit = value_or(request, "max_tokens", value_or(request, "max_completion_tokens", 4096));
         json tools = value_or(request, "tools", json::array());
         json options = value_or(request, "options", json::object());
+        std::optional<int> requested_num_ctx;
+        if (auto bad = flm::http_guard::parse_num_ctx(request, "num_ctx", requested_num_ctx)) {
+            send_response(*bad);
+            return;
+        }
 
         // tool_choice, parallel_tool_calls and response_format become a decoding constraint
         chat_constraint_request constraint_request;
@@ -1539,7 +1635,7 @@ void RestHandler::handle_openai_chat_completion(const json& request,
             return;
         }
         auto load_start_time = time_utils::now();
-        if (!ensure_model_loaded(model, request_backend)) {
+        if (!ensure_model_loaded(model, request_backend, requested_num_ctx)) {
             send_response(ModelLoadFailedResponse(model));
             return;
         }
@@ -1828,6 +1924,8 @@ void RestHandler::handle_openai_chat_completion(const json& request,
             send_response(response);
         }
 
+    } catch (const ContextOverrideError& e) {
+        send_response(e.response);
     } catch (const std::exception& e) {
         json error_response = {
             {"error", {

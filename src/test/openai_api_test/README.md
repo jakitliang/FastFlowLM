@@ -41,6 +41,7 @@ Each case prints `PASS`, `FAIL` or `SKIP`. The exit code is non-zero if anything
 | `test_continue_final_message.py` | `continue_final_message` continues a trailing assistant message instead of answering it: content is only the new text, whitespace as written (a model that reasons first may read the prefix as reasoning, and close it), `logprobs` cover exactly the continued tokens (the first entry scores the next token), stream matches non-stream, a cache-resumed continuation matches a cold one, a normal turn can follow, malformed combinations get 400 |
 | `test_errors.py` | Every malformed `tool_choice` / `response_format` gets HTTP 400, and an unknown model HTTP 404 (chat and `/v1/completions`), with an OpenAI error body, streaming too, and the server keeps serving |
 | `test_connections.py` | Connections give their slot back however they end: clients hanging up mid-stream, before the first chunk or on a non-streaming request, finished requests, idle and malformed connections. Needs the default `--socket 10` |
+| `test_context_override.py` | Checks capability discovery, request context validation, loaded context, and restoration of the default context. |
 
 Some cases skip by design:
 

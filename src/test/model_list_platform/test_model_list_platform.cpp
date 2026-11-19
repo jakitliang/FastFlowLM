@@ -317,6 +317,32 @@ void test_shipped_catalog_is_well_formed() {
     TEST_REQUIRE(catalog.at("models").contains("phi4-mini-it-core"));
 }
 
+void test_openai_models_opt_in() {
+    std::string list_path = kCatalogPath;
+    std::string model_home = "test-model-home";
+    model_list models(list_path, model_home, "aie2p", {"flm"});
+    const auto standard = models.get_all_models_openai();
+    const auto extended = models.get_all_models_openai(
+        [&](const nlohmann::json& entry, const std::filesystem::path& package, const std::filesystem::path&) {
+            const auto expected = std::filesystem::path(models.get_model_root_path()) /
+                                  entry.at("name").get<std::string>();
+            TEST_REQUIRE(package == expected);
+            return nlohmann::json{{"test", true}};
+        });
+    const auto& plain = standard.at("data");
+    const auto& opt_in = extended.at("data");
+    TEST_REQUIRE(!plain.empty());
+    TEST_REQUIRE(plain.size() == opt_in.size());
+    const auto only = models.get_all_models_openai({}, [](const std::string& tag) { return tag == "llama3.2:1b"; });
+    TEST_REQUIRE(only.at("data").size() == 1);
+    TEST_REQUIRE(only.at("data")[0].at("id") == "llama3.2:1b");
+    for (std::size_t i = 0; i < plain.size(); ++i) {
+        TEST_REQUIRE(!plain[i].contains("flm"));
+        TEST_REQUIRE(plain[i].at("id") == opt_in[i].at("id"));
+        TEST_REQUIRE(opt_in[i].at("flm").at("test") == true);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -333,6 +359,7 @@ int main() {
     RunTest(test_missing_key_means_every_generation,
             "missing key means every generation");
     RunTest(test_platform_helpers, "platform helpers");
+    RunTest(test_openai_models_opt_in, "OpenAI model capabilities are opt-in");
     RunTest(test_shipped_catalog_is_well_formed,
             "shipped catalog is well formed");
     std::cout << "All model_list platform tests passed\n";

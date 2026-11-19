@@ -7,6 +7,7 @@
 #pragma once
 
 #include "AutoModel/automodel.hpp"
+#include "AutoModel/reasoning_efforts.hpp"
 
 class GPT_OSS : public AutoModel {
 private:
@@ -36,7 +37,7 @@ public:
         if (parameter_name == "reasoning_effort") {
             try {
                 this->reasoning_effort = std::any_cast<std::string>(value);
-                if (this->reasoning_effort == "high" || this->reasoning_effort == "medium" || this->reasoning_effort == "low")
+                if (flm::accepts_reasoning_effort(flm::gpt_oss_efforts, this->reasoning_effort))
                     this->extra_context["reasoning_effort"] = this->reasoning_effort;
                 else
                     header_print("WARNING", "Reasoning effort must be 'low', 'medium' or 'high'!");
