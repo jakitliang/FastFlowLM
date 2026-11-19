@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -34,6 +35,21 @@ inline std::string route_path(std::string_view target) {
     while (path.size() > 1 && path.back() == '/') path.pop_back();
     if (path.empty()) path = "/";
     return path;
+}
+
+inline bool query_has(std::string_view target, std::string_view parameter) {
+    const auto fragment = target.find('#');
+    target = target.substr(0, fragment);
+    const auto query_start = target.find('?');
+    if (query_start == std::string_view::npos) return false;
+    auto query = target.substr(query_start + 1);
+    while (!query.empty()) {
+        const auto separator = query.find('&');
+        if (query.substr(0, separator) == parameter) return true;
+        if (separator == std::string_view::npos) break;
+        query.remove_prefix(separator + 1);
+    }
+    return false;
 }
 
 /// Routes that run the model and so must take the NPU lock or queue. Every POST route whose
@@ -312,6 +328,21 @@ inline std::optional<ojson> validate_generate(const ojson& r) { return require_s
 
 /// POST /api/chat: "messages" (array).
 inline std::optional<ojson> validate_chat(const ojson& r) { return require_array(r, "messages"); }
+
+inline std::optional<ojson> parse_num_ctx(const ojson& fields, const char* param,
+                                         std::optional<int>& num_ctx) {
+    num_ctx.reset();
+    const auto it = fields.find("num_ctx");
+    if (it == fields.end()) return std::nullopt;
+    constexpr int max = std::numeric_limits<int>::max();
+    const bool valid = it->is_number_unsigned() ? it->get<std::uint64_t>() <= max && *it != 0
+        : it->is_number_integer() && it->get<std::int64_t>() > 0 && it->get<std::int64_t>() <= max;
+    if (!valid)
+        return error_body(std::string("'") + param + "' must be a positive integer no greater than " +
+                          std::to_string(max) + ".", 400, param);
+    num_ctx = it->get<int>();
+    return std::nullopt;
+}
 
 /// Embedding requests name a model and supply input; providers validate each input item's contents.
 inline std::optional<ojson> validate_embeddings(const ojson& r) {

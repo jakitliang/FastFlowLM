@@ -179,6 +179,59 @@ def not_found_is_json(api: Api) -> None:
         expect(isinstance(parsed, dict) and "error" in parsed, f"{method} 404 body: {parsed!r:.200}")
 
 
+@case
+def model_capabilities_opt_in(api: Api) -> None:
+    status, _, default = call(api, "GET", "/v1/models")
+    expect(status == 200 and isinstance(default, dict), f"/v1/models: {status}, {default!r}")
+    status, _, extended = call(api, "GET", "/v1/models?include=capabilities")
+    expect(status == 200 and isinstance(extended, dict), f"opt-in /v1/models: {status}, {extended!r}")
+    plain_models, opt_in_models = default["data"], extended["data"]
+    expect([entry["id"] for entry in plain_models] == [entry["id"] for entry in opt_in_models],
+           "capability opt-in changed which models are listed")
+    for plain, entry in zip(plain_models, opt_in_models):
+        expect("flm" not in plain and isinstance(entry.get("flm"), dict), f"capability opt-in: {entry!r}")
+        for key in ("vlm", "think", "tools"):
+            expect(key not in entry["flm"] or type(entry["flm"][key]) is bool, f"invalid {key}: {entry!r}")
+        for key in ("default_context_length", "max_position_embeddings"):
+            length = entry["flm"].get(key)
+            expect(length is None or (type(length) is int and length > 0), f"invalid {key}: {entry!r}")
+
+
+@case
+def installed_models_opt_in(api: Api) -> None:
+    status, _, complete = call(api, "GET", "/v1/models?include=capabilities")
+    expect(status == 200 and isinstance(complete, dict), f"complete model list: {status}, {complete!r}")
+    status, _, installed = call(api, "GET", "/v1/models?installed=true&include=capabilities")
+    expect(status == 200 and isinstance(installed, dict), f"installed model list: {status}, {installed!r}")
+    summaries = {entry["id"]: entry["flm"] for entry in complete["data"]}
+    for entry in installed["data"]:
+        expect(entry["id"] in summaries and entry["flm"] == summaries[entry["id"]],
+               f"installed model is missing from the full list or its metadata changed: {entry!r}")
+    ready_model = os.environ.get("FLM_TEST_INSTALLED_MODEL")
+    if ready_model:
+        expect(any(entry["id"] == ready_model for entry in installed["data"]),
+               f"ready model {ready_model} missing from installed list")
+
+
+@case
+def loaded_model_status(api: Api) -> None:
+    """Run on a server with and without a startup chat model to exercise both shapes."""
+    status, _, body = call(api, "GET", "/api/ps")
+    expect(status == 200 and isinstance(body, dict), f"/api/ps: {status}, {body!r}")
+    models = body.get("models")
+    expect(isinstance(models, list) and len(models) <= 1, f"/api/ps: {body!r}")
+    expected_context = os.environ.get("FLM_TEST_PS_CONTEXT_LENGTH")
+    if expected_context == "0":
+        expect(not models, f"expected no loaded model: {models!r}")
+    elif expected_context is not None:
+        expect(bool(models), "expected a loaded chat model")
+        expect(models[0].get("context_length") == int(expected_context), f"/api/ps: {models!r}")
+    for model in models:
+        expect(model.get("name") and model.get("name") == model.get("model"), f"/api/ps: {model!r}")
+        length = model.get("context_length")
+        expect(type(length) is int and length > 0, f"/api/ps: {model!r}")
+
+
 # ---------------------------------------------------------------- CORS, Origin, Host
 
 
