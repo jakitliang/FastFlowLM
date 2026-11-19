@@ -1157,8 +1157,10 @@ std::unique_ptr<WebServer> create_lm_server(model_list& models, ModelDownloader&
             std::function<void(const json&, bool)> send_streaming_response,
             std::shared_ptr<HttpSession> session,
             std::shared_ptr<CancellationToken> cancellation_token) {
-                json request_json;
-                rest_handler->handle_models_openai(request_json, send_response, send_streaming_response);
+                const std::string_view target(req.target().data(), req.target().size());
+                rest_handler->handle_models_openai(
+                    flm::http_guard::query_has(target, "include=capabilities"),
+                    flm::http_guard::query_has(target, "installed=true"), send_response);
         });
 
     server->register_handler("POST", "/v1/embeddings",

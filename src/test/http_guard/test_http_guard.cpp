@@ -3,6 +3,7 @@
 ///        Origin/Host policy, CORS headers, and the 400s the Ollama-style handlers answer for a
 ///        missing or mistyped field. No NPU needed.
 #include "http_guard.hpp"
+#include "model_metadata.hpp"
 
 #include <cstdio>
 #include <fstream>
@@ -46,6 +47,76 @@ void test_route_path() {
     CHECK(route_path("/") == "/");
     CHECK(route_path("") == "/");
     CHECK(route_path("/?x") == "/");
+    CHECK(query_has("/v1/models?x=1&include=capabilities&y=2", "include=capabilities"));
+    CHECK(query_has("/v1/models?include=capabilities&installed=true", "installed=true"));
+    CHECK(!query_has("/v1/models?installed=false", "installed=true"));
+    CHECK(!query_has("/v1/models?other=include=capabilities", "include=capabilities"));
+    CHECK(!query_has("/v1/models?include=capabilities_extra", "include=capabilities"));
+    CHECK(!query_has("/v1/models#?include=capabilities", "include=capabilities"));
+    CHECK(!requires_npu_access("GET", "/v1/models"));
+    CHECK(!requires_npu_access("GET", "/api/ps"));
+}
+
+void test_model_capabilities() {
+    const auto package = std::filesystem::path("test-model-metadata-package");
+    const auto file = package / "model.json";
+    if (!std::filesystem::create_directory(package)) {
+        CHECK(false);
+        return;
+    }
+    const nlohmann::json entry = {{"vlm", true}, {"default_context_length", 8192}};
+    auto read = [&] { return flm::model_capabilities(entry, package, package); };
+    CHECK(read() == entry);
+    auto write_file = [&](const std::filesystem::path& path, const std::string& value) {
+        std::ofstream out(path, std::ios::binary);
+        out << value;
+        out.close();
+        CHECK(out.good());
+    };
+    auto write = [&](const std::string& value) { write_file(file, value); };
+    write(R"({"think":true,"tools":false,"vlm":false,"default_context_length":1,"backend":"other"})");
+    const auto capabilities = read();
+    CHECK(capabilities.size() == 4);
+    CHECK(capabilities.value("think", false));
+    CHECK(!capabilities.value("tools", true));
+    CHECK(capabilities.value("vlm", false));
+    CHECK(capabilities.value("default_context_length", 0) == 8192);
+    write(R"({"think":"true","tools":true})");
+    CHECK(read().value("tools", false));
+    CHECK(!read().contains("think"));
+    write("{");
+    CHECK(read() == entry);
+    write(std::string(16 * 1024 + 1, ' ') + R"({"think":true})");
+    CHECK(read() == entry);
+    const auto base = package / "base";
+    std::filesystem::create_directory(base);
+    const auto config = base / "config.json";
+    auto catalog_entry = entry;
+    catalog_entry["details"]["think_toggleable"] = false;
+    write(R"({"think":true,"max_position_embeddings":1})");
+    write_file(config, R"({"max_position_embeddings":65536,"text_config":{"max_position_embeddings":262144}})");
+    auto resolved = flm::model_capabilities(catalog_entry, package, base);
+    CHECK(!resolved.value("think", true));
+    CHECK(resolved.value("max_position_embeddings", 0) == 262144);
+    write_file(config, R"({"max_position_embeddings":65536,"text_config":{"max_position_embeddings":"bad"}})");
+    CHECK(flm::model_capabilities(catalog_entry, package, base).value("max_position_embeddings", 0) == 65536);
+    CHECK(!read().contains("max_position_embeddings"));
+    catalog_entry["details"]["family"] = "gpt-oss";
+    CHECK(flm::model_capabilities(catalog_entry, package, base).value("context_window_override", false));
+    catalog_entry["label"] = {"single-turn"};
+    CHECK(!flm::model_capabilities(catalog_entry, package, base).contains("context_window_override"));
+    catalog_entry.erase("label");
+    CHECK((flm::model_capabilities(catalog_entry, package, base).at("reasoning_effort") ==
+           nlohmann::json{"low", "medium", "high"}));
+    catalog_entry["details"]["family"] = "hy-memory";
+    CHECK((flm::model_capabilities(catalog_entry, package, base).at("reasoning_effort") ==
+           nlohmann::json{"low", "high"}));
+    catalog_entry["details"]["family"] = "qwen3.5";
+    CHECK(!flm::model_capabilities(catalog_entry, package, base).contains("reasoning_effort"));
+    std::filesystem::remove(config);
+    std::filesystem::remove(base);
+    std::filesystem::remove(file);
+    std::filesystem::remove(package);
 }
 
 /// Every POST route whose handler runs the model must be in requires_npu_access, so it takes the
@@ -273,15 +344,34 @@ void test_required_fields() {
     CHECK(e["error"]["code"].is_number_integer());
     CHECK(error_body("x", 403)["error"]["param"].is_null());
 }
+
+void test_num_ctx() {
+    std::optional<int> context = 1024;
+    CHECK(!parse_num_ctx(ojson::object(), "num_ctx", context));
+    CHECK(!context);
+    for (const char* value : {"null", "true", "\"512\"", "[]", "{}", "0", "-1", "512.0",
+                              "2147483648", "18446744073709551615", "18446744073709551616"}) {
+        const ojson body = {{"num_ctx", ojson::parse(value)}};
+        CHECK(is_400_for(parse_num_ctx(body, "num_ctx", context), "num_ctx"));
+        CHECK(is_400_for(parse_num_ctx(body, "options.num_ctx", context), "options.num_ctx"));
+        CHECK(!context);
+    }
+    CHECK(!parse_num_ctx(ojson{{"num_ctx", 1}}, "num_ctx", context));
+    CHECK(context == 1);
+    CHECK(!parse_num_ctx(ojson::parse(R"({"num_ctx":2147483647})"), "num_ctx", context));
+    CHECK(context == std::numeric_limits<int>::max());
+}
 }  // namespace
 
 int main() {
     test_route_path();
+    test_model_capabilities();
     test_engine_routes_take_npu_queue();
     test_origins();
     test_hosts();
     test_cors_headers();
     test_required_fields();
+    test_num_ctx();
     if (failures) {
         std::printf("%d check(s) failed\n", failures);
         return 1;

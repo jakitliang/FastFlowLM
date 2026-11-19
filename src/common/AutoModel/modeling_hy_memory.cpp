@@ -5,6 +5,7 @@
 /// \note AutoModel wrapper for the Hy-Memory-30B-A3B engine (hy_mem_npu).
 
 #include "AutoModel/modeling_hy_memory.hpp"
+#include "AutoModel/reasoning_efforts.hpp"
 #include "models/hy_mem/flm/aie2p/hy_mem_npu.hpp"
 
 #include <chrono>
@@ -100,7 +101,7 @@ bool HyMemory::configure_parameter(std::string parameter_name, const std::any& v
     if (parameter_name == "reasoning_effort") {
         try {
             const std::string effort = std::any_cast<std::string>(value);
-            if (effort != "no_think" && effort != "low" && effort != "high") {
+            if (effort != "no_think" && !flm::accepts_reasoning_effort(flm::hy_memory_efforts, effort)) {
                 return false;
             }
             this->reasoning_effort = effort;

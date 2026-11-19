@@ -291,6 +291,31 @@ flm serve llama3.2:1b --ctx-len 65536
 
 `usage.prompt_tokens` in each response tells you how long a prompt really was, and `usage.kv_token_occupancy_rate_percentage` how full the context is.
 
+### Per-request context window
+
+For models that advertise `flm.context_window_override: true` in
+`GET /v1/models?installed=true&include=capabilities`, set `num_ctx` in tokens:
+
+- OpenAI-compatible `POST /v1/chat/completions`: top-level `"num_ctx": 8192`
+  (`extra_body={"num_ctx": 8192}` with the OpenAI Python SDK).
+- Native `POST /api/chat`: `"options": {"num_ctx": 8192}`.
+
+Omit the field to use `--ctx-len`, if given, or the model's normal default. The
+override does not change those defaults: the next request without the field
+uses the original configuration. Changing context can reload the engine and
+discard its prompt cache. Neither `max_tokens`/`max_completion_tokens` nor
+`options.num_predict` changes meaning.
+
+Use a positive JSON integer no greater than 2,147,483,647; `null`, strings,
+booleans, decimal numbers and out-of-range values receive HTTP 400. FLM
+rejects requests above the model's declared position limit. If that limit
+is unavailable, FLM uses the larger of the catalog default and configured
+`--ctx-len` as a conservative ceiling. FLM can raise a request below 512,
+but rejects overrides that would give the request less context than it asked
+for, including when a backend applies a lower limit. `/api/ps` reports
+`requested_context_length` for an explicit override and the actual
+`context_length`; FLM logs when it raises the requested size.
+
 ### Things worth knowing
 
 - **Only the new part is read.** When the start of the prompt is already in the KV cache (the prompt cache, or the [prefix cache](https://fastflowlm.com/docs/instructions/server/prefix_cache/) on Qwen3.5 / Qwen3.6), only the rest is chunked and read. `usage.prompt_tokens_details.cached_tokens` says how much was reused.

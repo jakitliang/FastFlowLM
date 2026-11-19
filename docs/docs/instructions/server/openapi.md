@@ -127,6 +127,47 @@ gc.collect()
 
 > ✅ This setup is perfect for quick offline LLM testing using standard OpenAI tooling.
 
+`GET /v1/models` keeps the standard list response by default. FastFlowLM clients
+can request `GET /v1/models?include=capabilities` to add an `flm` object to each
+entry. Add `installed=true` to list only locally ready models (including any
+required base package), without attempting downloads:
+`GET /v1/models?installed=true&include=capabilities`.
+
+- `vlm` and `default_context_length` come from the model catalog. When `vlm` is
+  true, send an inline base64 image as an `image_url` content part; there is no
+  separate vision switch in the chat request.
+- `max_position_embeddings` comes from the model package's `config.json`,
+  preferring `text_config` when present. It describes the model's declared
+  limit, not a guarantee of backend capacity or the running context.
+- `context_window_override: true` means this FLM server accepts a per-request
+  `num_ctx` for this model on `/v1/chat/completions`. Check `flm.context_window_override`
+  for the selected model before sending the field; older servers may silently
+  ignore `num_ctx`. The signal is omitted for models with a fixed window or
+  models that do not serve chat.
+- `think` indicates whether the model accepts the `think` switch, not whether
+  it currently has thinking enabled. It comes from catalog `details.think_toggleable`
+  when available. An optional `model.json` in the model's own folder can
+  supply `think` when the catalog omits it, and `tools` for tool-calling support
+  on `/v1/chat/completions`. An omitted field means unknown. This file only
+  advertises capabilities; it does not enable them or change model loading.
+- `reasoning_effort`, when present, lists the distinct thinking levels clients
+  can send as the top-level `reasoning_effort` string on `/v1/chat/completions`.
+  GPT-OSS exposes `low`, `medium`, `high`; Hy-Memory exposes `low`, `high`.
+  Toggle-only models do not advertise effort levels. Select the model default
+  by omitting both `think` and `reasoning_effort`; offer an explicit `think: false`
+  only when `flm.think` is `true`.
+
+`GET /api/ps` reports the currently loaded chat model, if any. Its `context_length`
+is the context length in tokens for that loaded instance, not the catalog default
+or the number of tokens currently in use. For an explicit override it also
+includes `requested_context_length`; a larger `context_length` means FLM raised
+the requested size. FLM rejects an override it cannot meet rather than lowering it.
+When no chat model is loaded, it returns
+`{"models":[]}`. This request does not load a model or use the NPU queue.
+
+See [Per-request context window](request_parameters.md#per-request-context-window) for
+request examples and validation rules.
+
 ---
 
 # 🧪 More Examples
