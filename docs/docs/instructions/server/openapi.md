@@ -146,10 +146,12 @@ required base package), without attempting downloads:
   models that do not serve chat.
 - `think` indicates whether the model accepts the `think` switch, not whether
   it currently has thinking enabled. It comes from catalog `details.think_toggleable`
-  when available. An optional `model.json` in the model's own folder can
-  supply `think` when the catalog omits it, and `tools` for tool-calling support
-  on `/v1/chat/completions`. An omitted field means unknown. This file only
-  advertises capabilities; it does not enable them or change model loading.
+  when available.
+- `tools: true` is advertised for catalog entries labeled `tool-calling` and
+  describes support on `/v1/chat/completions`. An optional `model.json` in the
+  model's own folder can supply `think` or `tools` when the catalog does not
+  declare that capability. An omitted field means unknown. These fields only
+  advertise capabilities; they do not enable them or change model loading.
 - `reasoning_effort`, when present, lists the distinct thinking levels clients
   can send as the top-level `reasoning_effort` string on `/v1/chat/completions`.
   GPT-OSS exposes `low`, `medium`, `high`; Hy-Memory exposes `low`, `high`.

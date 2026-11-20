@@ -67,6 +67,15 @@ void test_model_capabilities() {
     const nlohmann::json entry = {{"vlm", true}, {"default_context_length", 8192}};
     auto read = [&] { return flm::model_capabilities(entry, package, package); };
     CHECK(read() == entry);
+    auto tool_entry = entry;
+    tool_entry["label"] = {"vision", "tool-calling"};
+    auto read_tools = [&] { return flm::model_capabilities(tool_entry, package, package); };
+    CHECK(read_tools().value("tools", false));
+    tool_entry["label"] = {"vision", "tool-calling-preview"};
+    CHECK(!read_tools().contains("tools"));
+    tool_entry["label"] = "tool-calling";
+    CHECK(!read_tools().contains("tools"));
+    tool_entry["label"] = {"tool-calling"};
     auto write_file = [&](const std::filesystem::path& path, const std::string& value) {
         std::ofstream out(path, std::ios::binary);
         out << value;
@@ -79,6 +88,7 @@ void test_model_capabilities() {
     CHECK(capabilities.size() == 4);
     CHECK(capabilities.value("think", false));
     CHECK(!capabilities.value("tools", true));
+    CHECK(read_tools().value("tools", false));
     CHECK(capabilities.value("vlm", false));
     CHECK(capabilities.value("default_context_length", 0) == 8192);
     write(R"({"think":"true","tools":true})");
