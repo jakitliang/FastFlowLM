@@ -12,6 +12,12 @@
 
 namespace flm {
 
+inline bool has_catalog_label(const nlohmann::json& entry, const char* label) {
+    const auto labels = entry.find("label");
+    return labels != entry.end() && labels->is_array() &&
+           std::find(labels->begin(), labels->end(), label) != labels->end();
+}
+
 inline nlohmann::json read_model_metadata(const std::filesystem::path& path) {
     std::error_code error;
     const auto status = std::filesystem::status(path, error);
@@ -40,8 +46,7 @@ inline bool supports_num_ctx(const nlohmann::json& entry) {
     const auto family = entry.value("details", nlohmann::json::object()).value("family", std::string());
     if (family.empty() || family == "whisper-v3" || family == "r2t2" ||
         family == "embed-gemma" || family == "d3") return false;
-    const auto labels = entry.find("label");
-    return labels == entry.end() || std::find(labels->begin(), labels->end(), "single-turn") == labels->end();
+    return !has_catalog_label(entry, "single-turn");
 }
 
 inline std::optional<int> model_position_limit(const std::filesystem::path& load_package) {
@@ -66,6 +71,7 @@ inline nlohmann::json model_capabilities(const nlohmann::json& entry,
                                          const std::filesystem::path& load_package) {
     auto result = nlohmann::json::object();
     if (supports_num_ctx(entry)) result["context_window_override"] = true;
+    if (has_catalog_label(entry, "tool-calling")) result["tools"] = true;
     const auto vlm = entry.find("vlm");
     if (vlm != entry.end() && vlm->is_boolean()) result["vlm"] = *vlm;
     const auto context = entry.find("default_context_length");

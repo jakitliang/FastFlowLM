@@ -12,7 +12,8 @@ add_executable(test_model_list_platform
     test_model_list_platform.cpp
     "${FLM_SOURCE_DIR}/common/npu_platform.cpp")
 target_include_directories(test_model_list_platform PRIVATE
-    "${FLM_SOURCE_DIR}/include")
+    "${FLM_SOURCE_DIR}/include"
+    "${FLM_SOURCE_DIR}/server")
 target_compile_definitions(test_model_list_platform PRIVATE
     FLM_TEST_MODEL_LIST_PATH="${FLM_SOURCE_DIR}/model_list.json")
 

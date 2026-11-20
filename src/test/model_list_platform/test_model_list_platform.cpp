@@ -4,6 +4,8 @@
 /// \note  Deliberately free of NPU hardware: everything here is catalog logic,
 ///        so it builds and runs on Linux CI where the phi4_core suite cannot.
 #include "model_list.hpp"
+#include "model_metadata.hpp"
+#include "request_options.hpp"
 #include "utils/npu_platform.hpp"
 #include "../phi4_core/test_support.hpp"
 
@@ -343,6 +345,36 @@ void test_openai_models_opt_in() {
     }
 }
 
+void test_model_capability_options() {
+    using flm::http_guard::parse_num_ctx;
+    using flm::http_guard::query_has;
+    TEST_REQUIRE(query_has("/v1/models?installed=true&include=capabilities", "include=capabilities"));
+    TEST_REQUIRE(!query_has("/v1/models?other=include=capabilities", "include=capabilities"));
+    TEST_REQUIRE(!query_has("/v1/models#?installed=true", "installed=true"));
+    using Json = nlohmann::ordered_json;
+    std::optional<int> context;
+    TEST_REQUIRE(!parse_num_ctx(Json{{"num_ctx", 512}}, "num_ctx", context));
+    TEST_REQUIRE(context == 512);
+    for (const auto* invalid : {"null", "true", "\"512\"", "0", "512.0", "2147483648"}) {
+        const auto error = parse_num_ctx(Json{{"num_ctx", Json::parse(invalid)}}, "options.num_ctx", context);
+        TEST_REQUIRE(error);
+        TEST_REQUIRE(error->at("error").at("param") == "options.num_ctx");
+        TEST_REQUIRE(!context);
+    }
+
+    nlohmann::json entry = {{"details", {{"family", "qwen3.5"}, {"think_toggleable", false}}},
+                            {"label", {"tool-calling"}}};
+    const auto absent = std::filesystem::path("test-model-metadata-absent");
+    const auto caps = flm::model_capabilities(entry, absent, absent);
+    TEST_REQUIRE(caps.at("tools") == true);
+    TEST_REQUIRE(caps.at("think") == false);
+    TEST_REQUIRE(caps.at("context_window_override") == true);
+    entry["label"] = nlohmann::json::array({"single-turn"});
+    const auto single_turn = flm::model_capabilities(entry, absent, absent);
+    TEST_REQUIRE(!single_turn.contains("tools"));
+    TEST_REQUIRE(!single_turn.contains("context_window_override"));
+}
+
 }  // namespace
 
 int main() {
@@ -360,6 +392,7 @@ int main() {
             "missing key means every generation");
     RunTest(test_platform_helpers, "platform helpers");
     RunTest(test_openai_models_opt_in, "OpenAI model capabilities are opt-in");
+    RunTest(test_model_capability_options, "model metadata and request options");
     RunTest(test_shipped_catalog_is_well_formed,
             "shipped catalog is well formed");
     std::cout << "All model_list platform tests passed\n";
