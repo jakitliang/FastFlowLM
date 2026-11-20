@@ -67,6 +67,13 @@ void test_model_capabilities() {
     const nlohmann::json entry = {{"vlm", true}, {"default_context_length", 8192}};
     auto read = [&] { return flm::model_capabilities(entry, package, package); };
     CHECK(read() == entry);
+    auto audio_entry = entry;
+    audio_entry["label"] = {"audio", "chat-transcription"};
+    CHECK(flm::model_capabilities(audio_entry, package, package).at("audio") == true);
+    audio_entry["label"] = {"vision"};
+    CHECK(flm::model_capabilities(audio_entry, package, package).at("audio") == false);
+    audio_entry["label"] = "audio";
+    CHECK(!flm::model_capabilities(audio_entry, package, package).contains("audio"));
     auto tool_entry = entry;
     tool_entry["label"] = {"vision", "tool-calling"};
     auto read_tools = [&] { return flm::model_capabilities(tool_entry, package, package); };

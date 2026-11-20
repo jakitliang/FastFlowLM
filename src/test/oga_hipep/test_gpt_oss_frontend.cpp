@@ -164,11 +164,16 @@ public:
         log_raw_output = false;
     }
 
-    std::string apply_chat_template(nlohmann::ordered_json&,
-                                    nlohmann::ordered_json,
+    std::string apply_chat_template(nlohmann::ordered_json& messages,
+                                    nlohmann::ordered_json tools,
                                     bool) override {
+        rendered_messages = messages;
+        rendered_tools = std::move(tools);
         return "fake rendered prompt";
     }
+
+    nlohmann::ordered_json rendered_messages;
+    nlohmann::ordered_json rendered_tools;
 
     const std::vector<int>& history() const { return token_history; }
     FakeEngine& engine() const { return *engine_; }
@@ -199,6 +204,25 @@ chat_meta_info_t Meta() {
     chat_meta_info_t meta;
     meta.max_prefill_len = 64;
     return meta;
+}
+
+void ToolDefinitionsAndHistoryReachTheTemplate() {
+    Reset({10, kStart, kAssistant}, {});
+    Harness model;
+    lm_uniform_input_t input;
+    input.messages = nlohmann::ordered_json::parse(R"([
+        {"role":"user","content":"Look up ALPHA."},
+        {"role":"assistant","tool_calls":[{"id":"call_fixture","type":"function",
+         "function":{"name":"lookup_fixture","arguments":"{\"code\":\"ALPHA\"}"}}]},
+        {"role":"tool","tool_call_id":"call_fixture","content":"fixture-value-739"}
+    ])");
+    input.tools = nlohmann::ordered_json::parse(R"([
+        {"type":"function","function":{"name":"lookup_fixture","parameters":{"type":"object"}}}
+    ])");
+    auto meta = Meta();
+    Require(model.insert(meta, input), "tool history insert failed");
+    Require(model.rendered_tools == input.tools, "tool definitions did not reach the template");
+    Require(model.rendered_messages == input.messages, "tool history did not reach the template unchanged");
 }
 
 void RequireHistoryMatchesEngine(const Harness& model) {
@@ -414,6 +438,7 @@ int main() {
             std::cerr << "FAIL " << name << ": " << error.what() << '\n';
         }
     };
+    run("tool definitions and history reach the template", ToolDefinitionsAndHistoryReachTheTemplate);
     run("a reply ends without running its <|return|>", AReplyEndsWithoutRunningItsReturn);
     run("a first prompt the server lets restore still runs", AFirstPromptTheServerLetsRestoreStillRuns);
     run("the same reply continues the engine's history", TheSameReplyContinuesTheHistoryTheEngineRan);

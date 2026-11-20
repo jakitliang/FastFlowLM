@@ -72,6 +72,9 @@ inline nlohmann::json model_capabilities(const nlohmann::json& entry,
     auto result = nlohmann::json::object();
     if (supports_num_ctx(entry)) result["context_window_override"] = true;
     if (has_catalog_label(entry, "tool-calling")) result["tools"] = true;
+    if (const auto labels = entry.find("label"); labels != entry.end() && labels->is_array()) {
+        result["audio"] = has_catalog_label(entry, "audio");
+    }
     const auto vlm = entry.find("vlm");
     if (vlm != entry.end() && vlm->is_boolean()) result["vlm"] = *vlm;
     const auto context = entry.find("default_context_length");
