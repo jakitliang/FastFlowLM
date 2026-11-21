@@ -33,6 +33,7 @@ void GPT_OSS::load_model(std::string model_path, json model_info, int default_co
 
     this->setup_tokenizer(model_path);
     this->sampler.reset();
+    this->reasoning_effort = default_reasoning_effort;
 
     sampler_config config;
     config.top_k = 10;

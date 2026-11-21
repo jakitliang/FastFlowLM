@@ -24,6 +24,7 @@ void Qwen3_5VL::load_model(std::string model_path, json model_info, int default_
     this->_load_vision_geometry();
     this->setup_tokenizer(model_path);
     this->sampler.reset();
+    this->enable_think = model_info.value("default_think", true);
 
     this->enable_tool = (model_info["size"] > 800000000)? true : false;
 

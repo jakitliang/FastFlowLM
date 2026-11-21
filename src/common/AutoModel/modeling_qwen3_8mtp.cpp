@@ -52,6 +52,7 @@ void Qwen3_8MTP::load_model(std::string model_path, json model_info, int default
     this->_clamp_to_engine_limit();
 
     this->sampler.reset();
+    this->enable_think = true;
 
     this->enable_tool = true;
     

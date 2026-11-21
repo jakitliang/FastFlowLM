@@ -244,6 +244,8 @@ client.chat.completions.create(model="gpt-oss:20b", messages=msgs, reasoning_eff
 
 > ℹ️ **The setting applies to its own request.** A request that doesn't mention `think` or `reasoning_effort` gets the model's default, not what an earlier request set. This holds for the `reasoning_effort` levels of GPT-OSS and Hy-Memory too.
 
+The native `qwen3:0.6b` keeps its existing thinking-off default; the other switchable Qwen3 text tags, including `qwen3-core:0.6b`, start with thinking on. The Qwen3.5, Qwen3.6 and Qwen3.8 variants served by these chat frontends (including Core and OGA HiPEP) also start with thinking on, except for Qwen3.5 0.8B and 2B, which declare `default_think: false` in the server catalog. This setting is separate from the catalog's `think_toggleable` capability. GPT-OSS and GPT-OSS Safeguard start at `medium` effort.
+
 What changes when thinking is off:
 
 - `reasoning_content` is left out of the response.

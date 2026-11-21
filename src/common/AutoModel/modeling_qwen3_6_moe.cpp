@@ -27,6 +27,7 @@ void Qwen3_6_MOE::load_model(std::string model_path, json model_info, int defaul
     this->_shared_load_backend(model_path, model_info, default_context_length, enable_preemption, backend);
     this->setup_tokenizer(model_path);
     this->sampler.reset();
+    this->enable_think = true;
 
     this->enable_tool =true;
 

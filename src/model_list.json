@@ -343,6 +343,7 @@
                     "format": "NPU2",
                     "family": "gemma4e-dflash",
                     "think": true,
+                    "think_toggleable": true,
                     "parameter_size": "8B+0.36B",
                     "quantization_level": "Q4_1"
                 },
@@ -478,6 +479,7 @@
                 "url": "https://huggingface.co/FastFlowLM/Qwen3.5-0.8B-NPU2/resolve/flm_q4k_high_precision",
                 "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen3.5-0.8B-NPU2/tree/flm_q4k_high_precision",
                 "ms_url": "https://modelscope.cn/models/amd/Qwen3.5-0.8B-NPU2/resolve/flm_q4k_high_precision",
+                "default_think": false,
                 "size": 800000000,
                 "flm_min_version": "1.0.3",
                 "files": [
@@ -511,6 +513,7 @@
                 "url": "https://huggingface.co/FastFlowLM/Qwen3.5-2B-NPU2/resolve/flm_q4k_high_precision",
                 "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen3.5-2B-NPU2/tree/flm_q4k_high_precision",
                 "ms_url": "https://modelscope.cn/models/amd/Qwen3.5-2B-NPU2/resolve/flm_q4k_high_precision",
+                "default_think": false,
                 "size": 2000000000,
                 "flm_min_version": "1.0.3",
                 "files": [

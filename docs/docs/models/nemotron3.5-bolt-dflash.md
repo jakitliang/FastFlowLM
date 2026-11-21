@@ -12,7 +12,7 @@ parent: Models
   tokens at a time and the NPU checks all of them in one pass
 - **Speed:** 1.3x to 1.9x the decode speed of `nemotron3.5-bolt:e4b`, from short prompts to 16k tokens of context
   ([benchmarks](https://fastflowlm.com/docs/benchmarks/nemotron3.5-bolt-dflash_results/))
-- **Think / Conversational mode / Tool Calling / Vision / Audio:** as `nemotron3.5-bolt:e4b`
+- **Think / Conversational mode / Tool Calling / Vision / Audio:** as `nemotron3.5-bolt:e4b`. The server accepts `"think": true` or `false` and advertises the toggle as `flm.think: true` in `/v1/models?installed=true&include=capabilities`.
 - **Packages:** two downloads. The main weights are the `nemotron3.5-bolt:e4b` package (`Nemotron-3.5-Bolt-E4B-NPU2`, about 8.5 GiB); the
   draft is [`Nemotron-3.5-Bolt-E4B-DFlash-NPU2`](https://huggingface.co/FastFlowLM/Nemotron-3.5-Bolt-E4B-DFlash-NPU2) (0.25 GiB).
   `flm pull nemotron3.5-bolt-dflash:e4b` downloads whichever is missing

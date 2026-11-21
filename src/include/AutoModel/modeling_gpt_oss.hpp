@@ -14,7 +14,8 @@ private:
 
     bool enable_think = true;
 
-    std::string reasoning_effort = "low";
+    static constexpr char default_reasoning_effort[] = "medium";
+    std::string reasoning_effort = default_reasoning_effort;
     std::string model_identity = "You are ChatGPT, a large language model trained by OpenAI.";
     std::string role = "developer";
 
@@ -42,7 +43,7 @@ public:
     }
 
     /// \brief request settings the model loaded with (see AutoModel::save_request_settings)
-    std::string loaded_reasoning_effort = "low";
+    std::string loaded_reasoning_effort = default_reasoning_effort;
     void save_model_request_settings() override {
         loaded_reasoning_effort = this->reasoning_effort;
     }
