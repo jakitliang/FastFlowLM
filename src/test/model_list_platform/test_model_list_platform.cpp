@@ -375,6 +375,23 @@ void test_model_capability_options() {
     TEST_REQUIRE(!single_turn.contains("context_window_override"));
 }
 
+void test_model_audio_capability() {
+    using Json = nlohmann::json;
+    const auto absent = std::filesystem::path("test-model-metadata-absent");
+    Json entry = Json::object();
+    const auto capabilities = [&] { return flm::model_capabilities(entry, absent, absent); };
+
+    TEST_REQUIRE(!capabilities().contains("audio"));
+    entry["label"] = "audio";
+    TEST_REQUIRE(!capabilities().contains("audio"));
+    entry["label"] = Json::array();
+    TEST_REQUIRE(capabilities().at("audio") == false);
+    entry["label"] = Json::array({"vision", "tool-calling"});
+    TEST_REQUIRE(capabilities().at("audio") == false);
+    entry["label"] = Json::array({"audio", "chat-transcription"});
+    TEST_REQUIRE(capabilities().at("audio") == true);
+}
+
 }  // namespace
 
 int main() {
@@ -393,6 +410,7 @@ int main() {
     RunTest(test_platform_helpers, "platform helpers");
     RunTest(test_openai_models_opt_in, "OpenAI model capabilities are opt-in");
     RunTest(test_model_capability_options, "model metadata and request options");
+    RunTest(test_model_audio_capability, "audio input capability comes from catalog labels");
     RunTest(test_shipped_catalog_is_well_formed,
             "shipped catalog is well formed");
     std::cout << "All model_list platform tests passed\n";

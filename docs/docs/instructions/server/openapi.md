@@ -133,6 +133,10 @@ entry. Add `installed=true` to list only locally ready models (including any
 required base package), without attempting downloads:
 `GET /v1/models?installed=true&include=capabilities`.
 
+- `audio` describes audio input capability. It is `true` when the catalog's
+  `label` array contains `audio`, `false` when the array lacks that label, and
+  omitted when `label` is absent or is not an array. It does not indicate
+  speech synthesis support or whether ASR is enabled on the running server.
 - `vlm` and `default_context_length` come from the model catalog. When `vlm` is
   true, send an inline base64 image as an `image_url` content part; there is no
   separate vision switch in the chat request.
