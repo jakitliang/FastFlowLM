@@ -36,6 +36,20 @@ std::string Llama3::apply_chat_template(nlohmann::ordered_json& messages, nlohma
     minja::chat_template_inputs inputs;
     inputs.messages = messages;
     inputs.extra_context = this->extra_context;
+    if (this->chat_format.kind == chat_format_kind::LLAMA_JSON && tools.is_array() && !tools.empty()) {
+        inputs.tools = tools;
+        inputs.extra_context["tools_in_user_message"] = false;
+        const auto instruction = "When a tool is needed, begin the function call with " +
+            this->chat_format.tool_start + " immediately before the JSON. "
+            "After receiving a tool result, use it to answer. If no tool is needed, answer normally.";
+        if (!inputs.messages.empty() && inputs.messages.front().value("role", "") == "system") {
+            auto& content = inputs.messages.front().at("content");
+            if (content.is_string()) content.get_ref<std::string&>().append("\n\n").append(instruction);
+        } else {
+            inputs.messages.insert(inputs.messages.begin(), nlohmann::ordered_json{
+                {"role", "system"}, {"content", instruction}});
+        }
+    }
     return this->_render_chat_template(inputs, continue_final_message);
 }
 
@@ -59,7 +73,7 @@ bool Llama3::insert(chat_meta_info_t& meta_info, lm_uniform_input_t& input, std:
         return false;
     }
     if (!input.messages.empty()) { // already a formated messages, usually from REST API
-        templated_text = this->apply_chat_template(input.messages, nlohmann::ordered_json::object(), meta_info.continue_final_message);
+        templated_text = this->apply_chat_template(input.messages, input.tools, meta_info.continue_final_message);
     }
     else if (!input.prompt.empty()) { // a pure text, usually from the cli
         nlohmann::ordered_json messages;

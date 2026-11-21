@@ -17,6 +17,7 @@ enum class chat_format_kind {
     LFM2_PYTHONIC,  // <|tool_call_start|>[f(a=1, b="x")]<|tool_call_end|>               (LFM2)
     GEMMA4,         // <|tool_call>call:f{a:<|"|>x<|"|>}<tool_call|>                     (Gemma4)
     HARMONY,        // <|channel|>analysis / commentary to=functions.f / final           (gpt-oss)
+    LLAMA_JSON,     // <|python_tag|>{"name": ..., "parameters": {...}}<|eom_id|>
 };
 
 /// \brief Everything the parser needs to know about one model's output syntax

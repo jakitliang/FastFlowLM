@@ -1542,6 +1542,7 @@
                     "parameter_size": "3B",
                     "quantization_level": "Q4_1"
                 },
+                "label": ["tool-calling"],
                 "footprint": 2.6
             }
         },

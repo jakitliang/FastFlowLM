@@ -328,6 +328,56 @@ def gpt_oss_workspace_auto(api: Api) -> None:
            f"expected an ordinary answer without a tool call, got {choice}")
 
 
+@case
+def llama32_required_default_parallel(api: Api) -> None:
+    """The Llama template supports only one call even with the default parallel setting."""
+    if api.model not in ("llama3.2:1b", "llama3.2:3b"):
+        raise Skip("Llama 3.2 tool template regression")
+    body = api.body(user(TWO_CITIES_PROMPT), tools=WEATHER_TOOLS, tool_choice="required")
+    calls = expect_calls(api.ok(body), WEATHER_TOOLS)
+    expect(len(calls) == 1, f"the Llama template cannot replay {len(calls)} calls")
+
+
+@case
+def llama32_plain_json(api: Api) -> None:
+    """A JSON example that looks like a call stays in content in auto mode."""
+    if api.model not in ("llama3.2:1b", "llama3.2:3b"):
+        raise Skip("Llama 3.2 tool template regression")
+    example = {"name": "get_weather", "parameters": {"city": "Paris"}}
+    prompt = f"Do not call any tools. Reply with this example as plain JSON only: {json.dumps(example)}"
+    choice = api.ok(api.body(user(prompt), tools=WEATHER_TOOLS, tool_choice="auto"))
+    msg = flm_api.check_message_contract(choice)
+    expect(choice["finish_reason"] == "stop" and not msg.get("tool_calls"),
+           f"plain JSON was not returned as content: {choice}")
+    content = (msg["content"] or "").strip()
+    if content.startswith("```") and content.endswith("```"):
+        content = content.split("\n", 1)[1][:-3].strip()
+    expect(json.loads(content) == example, f"expected the original JSON example, got {content!r}")
+
+
+@case
+def llama32_auto_round_trip(api: Api) -> None:
+    """Llama emits a native call under auto and reads the returned tool result."""
+    if api.model not in ("llama3.2:1b", "llama3.2:3b"):
+        raise Skip("Llama 3.2 tool template regression")
+    messages = user(WEATHER_PROMPT)
+    calls = expect_streamed_calls(api, api.body(messages, tools=WEATHER_TOOLS), WEATHER_TOOLS)
+    expect(len(calls) == 1, f"expected one call, got {calls}")
+    call = calls[0]
+    expect(call["function"]["name"] == "get_weather", f"unexpected function: {call}")
+    expect(json.loads(call["function"]["arguments"])["city"] == "Paris", f"wrong city: {call}")
+    messages += [
+        {"role": "assistant", "content": None, "tool_calls": [
+            {"id": call["id"], "type": "function", "function": call["function"]}]},
+        {"role": "tool", "tool_call_id": call["id"],
+         "content": json.dumps({"temperature_c": 23, "sky": "sunny"})},
+    ]
+    choice = api.ok(api.body(messages, tools=WEATHER_TOOLS, tool_choice="none"))
+    msg = flm_api.check_message_contract(choice)
+    expect(choice["finish_reason"] == "stop" and not msg.get("tool_calls") and "23" in (msg["content"] or ""),
+           f"expected an answer using the weather result, got {choice}")
+
+
 CASES = flm_api.collect(globals())
 
 if __name__ == "__main__":

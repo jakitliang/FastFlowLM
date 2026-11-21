@@ -445,6 +445,7 @@ void parse_tool_block(const chat_format_spec& spec, const std::string& body, boo
                       const param_types& types, std::vector<chat_tool_call>& calls) {
     switch (spec.kind) {
         case chat_format_kind::HERMES_JSON:
+        case chat_format_kind::LLAMA_JSON:
             parse_hermes_block(body, calls);
             break;
         case chat_format_kind::QWEN_XML:

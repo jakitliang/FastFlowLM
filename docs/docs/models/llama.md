@@ -29,7 +29,9 @@ flm run llama3.2:1b
 
 - **Type:** Text-to-Text
 - **Think:** No
-- **Tool Calling Support:** No  
+- **Tool Calling Support:** One function call per assistant turn on
+  `/v1/chat/completions`. Send tool results as `role: "tool"` messages with the
+  matching call ID. Ordinary JSON replies are not treated as tool calls.
 - **Prefix cache (server mode):** Yes, saved prompts are reused (see [Prefix Cache (Prompt Reuse)](https://fastflowlm.com/docs/instructions/server/prefix_cache/))
 - **Base Model:** [meta-llama/Llama-3.2-3B-Instruct](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)
 - **Quantization:** Q4_1

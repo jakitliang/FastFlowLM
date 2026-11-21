@@ -334,6 +334,11 @@ tool_syntax tool_tags(const chat_format_spec& spec, const std::vector<tool_def>&
                 syntax.tags.push_back(tag("<tool_call>\n{\"name\": \"" + tool.name + "\", \"arguments\": ",
                                           schema_content(tool.parameters), "}\n</tool_call>"));
                 break;
+            case chat_format_kind::LLAMA_JSON:
+                syntax.trigger = spec.tool_start;
+                syntax.tags.push_back(tag(spec.tool_start + "{\"name\": \"" + tool.name + "\", \"parameters\": ",
+                                          schema_content(tool.parameters), "}" + spec.tool_end));
+                break;
             case chat_format_kind::QWEN_XML:
                 // xgrammar's qwen_3_5 style
                 syntax.trigger = "<tool_call>\n<function=";
@@ -439,10 +444,10 @@ json harmony_format(const chat_constraint_request& request, const std::vector<to
 /// \brief Stop tokens the grammar matches as text
 /// \note xgrammar never lets a stop token stand for text, so these stay out of the
 ///       stop list although the model's eos list has them (gpt-oss ends a call with <|call|>)
-const std::set<std::string>& text_markers(const chat_format_spec& spec) {
-    static const std::set<std::string> harmony = {"<|call|>", "<|return|>", "<|end|>"};
-    static const std::set<std::string> none;
-    return spec.kind == chat_format_kind::HARMONY ? harmony : none;
+std::set<std::string> text_markers(const chat_format_spec& spec) {
+    if (spec.kind == chat_format_kind::HARMONY) return {"<|call|>", "<|return|>", "<|end|>"};
+    if (spec.kind == chat_format_kind::LLAMA_JSON) return {spec.tool_end};
+    return {};
 }
 
 /// \brief What to drop from the prefill before feeding it to the grammar
@@ -637,7 +642,8 @@ json chat_structural_tag(const chat_format_spec& spec, const chat_constraint_req
                                         ") has no tool call syntax to constrain");
         }
         // a forced function is exactly one call
-        const bool parallel = request.parallel_tool_calls && request.tool_choice != chat_tool_choice::FUNCTION;
+        const bool parallel = request.parallel_tool_calls && request.tool_choice != chat_tool_choice::FUNCTION &&
+                              spec.kind != chat_format_kind::LLAMA_JSON;
         tool_syntax syntax = tool_tags(spec, tools, parallel);
         json suffix;
         if (request.tool_choice == chat_tool_choice::FUNCTION) {
@@ -651,7 +657,7 @@ json chat_structural_tag(const chat_format_spec& spec, const chat_constraint_req
                 if (spec.kind == chat_format_kind::GEMMA4) excludes.push_back("<|channel>");
             }
             suffix = {{"type", "triggered_tags"}, {"triggers", {syntax.trigger}}, {"tags", syntax.tags},
-                      {"stop_after_first", !request.parallel_tool_calls}};
+                      {"stop_after_first", !parallel}};
             if (!excludes.empty()) suffix["excludes"] = excludes;
             if (request.tool_choice == chat_tool_choice::REQUIRED) suffix["at_least_one"] = true;
         }

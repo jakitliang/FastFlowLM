@@ -17,6 +17,7 @@ const format_name_entry FORMAT_NAMES[] = {
     {chat_format_kind::LFM2_PYTHONIC, "lfm2_pythonic"},
     {chat_format_kind::GEMMA4, "gemma4"},
     {chat_format_kind::HARMONY, "harmony"},
+    {chat_format_kind::LLAMA_JSON, "llama_json"},
 };
 
 } // namespace
@@ -58,6 +59,10 @@ chat_format_spec chat_format_make(chat_format_kind kind, bool with_reasoning) {
         case chat_format_kind::LFM2_PYTHONIC:
             spec.tool_start = "<|tool_call_start|>";
             spec.tool_end = "<|tool_call_end|>";
+            break;
+        case chat_format_kind::LLAMA_JSON:
+            spec.tool_start = "<|python_tag|>";
+            spec.tool_end = "<|eom_id|>";
             break;
         case chat_format_kind::GEMMA4:
             // Gemma4 always reasons in its own channel, never in <think>
@@ -110,6 +115,10 @@ chat_format_spec chat_format_detect(const std::string& template_src,
     // the token without the model ever being trained to call tools with it
     if (in_template("<tool_call>")) {
         return chat_format_make(chat_format_kind::HERMES_JSON, with_reasoning);
+    }
+    if (in_template("<|start_header_id|>ipython") && in_template("tool_call.arguments") &&
+        is_token("<|python_tag|>") && is_token("<|eom_id|>")) {
+        return chat_format_make(chat_format_kind::LLAMA_JSON, false);
     }
     chat_format_spec spec = chat_format_make(chat_format_kind::CONTENT_ONLY, with_reasoning);
     // DeepSeek-R1 and its distills were trained to always open with reasoning;
