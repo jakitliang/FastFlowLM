@@ -1837,7 +1837,7 @@
                 "details": {
                     "family": "gpt-oss",
                     "think": true,
-                    "think_toggleable": false,
+                    "think_toggleable": true,
                     "parameter_size": "20B",
                     "quantization_level": "Q4_1"
                 },
@@ -1868,7 +1868,7 @@
                 "details": {
                     "family": "gpt-oss",
                     "think": true,
-                    "think_toggleable": false,
+                    "think_toggleable": true,
                     "parameter_size": "20B",
                     "quantization_level": "Q4_1"
                 },

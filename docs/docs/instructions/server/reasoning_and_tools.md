@@ -244,6 +244,8 @@ client.chat.completions.create(model="gpt-oss:20b", messages=msgs, reasoning_eff
 
 > ⚠️ **The setting sticks.** `think` and `reasoning_effort` are applied to the loaded model and stay in effect for later requests that don't mention them. If your application mixes thinking and non-thinking calls, send the setting on **every** request.
 
+For GPT-OSS, `think: false` disables the Harmony `analysis` channel while still allowing final answers and tool calls. `think: true` allows analysis at the requested or default effort.
+
 What changes when thinking is off:
 
 - `reasoning_content` is left out of the response.

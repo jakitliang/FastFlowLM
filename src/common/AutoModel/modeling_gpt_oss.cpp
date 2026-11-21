@@ -16,6 +16,7 @@ void GPT_OSS::load_model(std::string model_path, json model_info, int default_co
 
     this->setup_tokenizer(model_path);
     this->sampler.reset();
+    this->enable_think = true;
 
     sampler_config config;
     config.top_k = 10;
@@ -56,6 +57,12 @@ bool GPT_OSS::insert(chat_meta_info_t& meta_info, lm_uniform_input_t& input, std
     if (input.messages.empty() && input.prompt.empty()) {
         header_print("WARNING", "No messages or prompt provided");
         return false;
+    }
+    // Native chat and CLI do not prepare an OpenAI decoding constraint.
+    if (!this->thinking_enabled() && !meta_info.constraint) {
+        chat_constraint_request request;
+        request.tools = &input.tools;
+        meta_info.constraint = this->make_constraint(request);
     }
     if (!input.messages.empty()) { // already a formated messages, usually from REST API
         templated_text = this->apply_chat_template(input.messages);
