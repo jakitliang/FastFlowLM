@@ -270,6 +270,64 @@ def gpt_oss_auto_round_trip(api: Api) -> None:
           f"expected an answer containing the tool result, got {choice}")
 
 
+@case
+def gpt_oss_workspace_auto(api: Api) -> None:
+    """Thinking GPT-OSS calls a workspace tool under auto without forcing ordinary turns."""
+    if api.model != "gpt-oss:20b":
+        raise Skip("GPT-OSS 20B template regression")
+    path = "D:/Temp/test"
+    tools = [
+        {"type": "function", "function": {
+            "name": name, "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {
+                    "type": "string", "description": "The absolute path of the selected working directory.",
+                }},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        }}
+        for name, description in (("list_files", "List files in a directory"), ("read_file", "Read a file"))
+    ]
+    system = {
+        "role": "system",
+        "content": "You are Chatbox. Use list_files to inspect the workspace. Do not invent file names.\n\n"
+                   "## Workspace Instructions\nNo root AGENTS.md was found while preparing this turn.\n"
+                   f"User-selected working directories:\n- {path}",
+    }
+    body = {
+        "model": api.model, "tools": tools, "tool_choice": "auto",
+        "think": True, "temperature": 0.0, "max_tokens": 620,
+    }
+    messages = [system, *user("\u770b\u770b\u76ee\u5f55\u91cc\u9762\u6709\u4ec0\u4e48\uff0c"
+                              "\u6211\u6307\u5b9a\u597d\u7ed9\u4f60\u4e86")]
+    calls = expect_streamed_calls(api, {**body, "messages": messages}, tools)
+    expect(len(calls) == 1, f"expected one tool call, got {calls}")
+    call = calls[0]["function"]
+    expect(call["name"] == "list_files" and json.loads(call["arguments"]) == {"path": path},
+           f"expected list_files for the selected directory, got {call}")
+
+    messages += [
+        {"role": "assistant", "content": None, "tool_calls": [
+            {"id": calls[0]["id"], "type": "function", "function": call}]},
+        {"role": "tool", "tool_call_id": calls[0]["id"],
+         "content": json.dumps({"files": [], "message": "The directory is empty."})},
+    ]
+    choice = api.ok({**body, "messages": messages})
+    msg = flm_api.check_message_contract(choice)
+    content = (msg["content"] or "").lower()
+    expect(choice["finish_reason"] == "stop" and not msg.get("tool_calls")
+           and any(word in content for word in ("empty", "\u7a7a", "\u6ca1\u6709", "\u65e0\u6587\u4ef6")),
+           f"expected an answer reporting the empty directory, got {choice}")
+
+    ordinary = [system, *user("What is 17 times 19? Answer only the number.")]
+    choice = api.ok({**body, "messages": ordinary})
+    msg = flm_api.check_message_contract(choice)
+    expect(choice["finish_reason"] == "stop" and not msg.get("tool_calls") and "323" in (msg["content"] or ""),
+           f"expected an ordinary answer without a tool call, got {choice}")
+
+
 CASES = flm_api.collect(globals())
 
 if __name__ == "__main__":

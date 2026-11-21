@@ -8,6 +8,29 @@
 
 #include <utility>
 
+namespace {
+void add_tool_protocol(nlohmann::ordered_json& messages) {
+    constexpr auto protocol = "Tool interaction protocol: For any request requiring a listed tool, "
+        "your next action is a call to the appropriate tool, not a final response. After receiving "
+        "the tool result, answer the user. For ordinary questions that need no tool, answer directly.";
+
+    // Harmony only renders a system/developer instruction from the first message.
+    if (!messages.empty()) {
+        auto& first = messages.front();
+        const auto role = first.value("role", "");
+        if (role == "system" || role == "developer") {
+            auto content = first.find("content");
+            if (content != first.end() && content->is_string()) {
+                content->get_ref<std::string&>().append("\n\n").append(protocol);
+            }
+            return;
+        }
+    }
+
+    messages.insert(messages.begin(), nlohmann::ordered_json{{"role", "developer"}, {"content", protocol}});
+}
+}  // namespace
+
 GPT_OSS::GPT_OSS(flm_rt::device* npu_device_inst) : AutoModel(npu_device_inst, "gpt-oss") {}
 
 void GPT_OSS::load_model(std::string model_path, json model_info, int default_context_length, bool enable_preemption, const std::string& backend) {
@@ -46,7 +69,10 @@ std::string GPT_OSS::apply_chat_template(nlohmann::ordered_json& messages, nlohm
     inputs.extra_context["reasoning_effort"] = this->reasoning_effort;
     inputs.extra_context["model_identity"] = this->model_identity;
     inputs.extra_context["role"] = this->role;
-    if (!tools.empty()) inputs.tools = std::move(tools);
+    if (tools.is_array() && !tools.empty()) {
+        inputs.tools = std::move(tools);
+        add_tool_protocol(inputs.messages);
+    }
 
     return this->_render_chat_template(inputs, continue_final_message);
 }

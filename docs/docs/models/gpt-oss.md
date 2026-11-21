@@ -12,7 +12,9 @@ parent: Models
 - **Tool Calling Support:** Yes, one call per assistant turn through the
   OpenAI-compatible API. Set `parallel_tool_calls: false` when sending tools;
   the packaged Harmony template only replays the first call from each
-  assistant message.
+  assistant message. With `tool_choice: "auto"`, the model may still answer
+  directly; only structured `tool_calls` are tool requests, not JSON in the
+  assistant's text.
 - **Prefix cache (server mode):** Yes, saved prompts are reused (see [Prefix Cache (Prompt Reuse)](https://fastflowlm.com/docs/instructions/server/prefix_cache/))
 - **Base Model:** [openai/gpt-oss-20b](https://huggingface.co/openai/gpt-oss-20b)
 - **Quantization:** Q4_1
