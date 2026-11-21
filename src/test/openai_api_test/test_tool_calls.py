@@ -236,6 +236,40 @@ def round_trip(api: Api) -> None:
     expect("23" in (msg["content"] or ""), f"the answer does not use the tool result: {msg['content']!r}")
 
 
+@case
+def gpt_oss_auto_round_trip(api: Api) -> None:
+    """GPT-OSS sees the tool schema and uses its result after a streamed auto call."""
+    if api.model != "gpt-oss:20b":
+        raise Skip("GPT-OSS 20B template regression")
+    tool = {"type": "function", "function": {
+        "name": "lookup_fixture",
+        "description": "Look up the secret value of a fixture by code.",
+        "parameters": {
+            "type": "object",
+            "properties": {"code": {"type": "string"}},
+            "required": ["code"],
+            "additionalProperties": False,
+        },
+    }}
+    messages = user("Call lookup_fixture with code ALPHA.")
+    body = api.body(messages, tools=[tool], tool_choice="auto", parallel_tool_calls=False,
+                    think=False, max_tokens=128)
+    calls = expect_streamed_calls(api, body, [tool])
+    expect(len(calls) == 1, f"expected one call, got {calls}")
+    call = calls[0]
+    expect(json.loads(call["function"]["arguments"]) == {"code": "ALPHA"}, f"wrong arguments: {call}")
+    messages += [
+        {"role": "assistant", "content": None, "tool_calls": [
+            {"id": call["id"], "type": "function", "function": call["function"]}]},
+        {"role": "tool", "tool_call_id": call["id"],         "content": json.dumps({"secret_value": "fixture-value-739"})},
+    ]
+    choice = api.ok(api.body(messages, tools=[tool], tool_choice="none",
+                            parallel_tool_calls=False, think=False, max_tokens=128))
+    msg = flm_api.check_message_contract(choice)
+    expect(choice["finish_reason"] == "stop" and "fixture-value-739" in (msg["content"] or ""),
+          f"expected an answer containing the tool result, got {choice}")
+
+
 CASES = flm_api.collect(globals())
 
 if __name__ == "__main__":
