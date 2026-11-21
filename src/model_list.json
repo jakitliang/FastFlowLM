@@ -309,6 +309,7 @@
                     "format": "NPU2",
                     "family": "gemma4e-dflash",
                     "think": true,
+                    "think_toggleable": true,
                     "parameter_size": "8B+0.36B",
                     "quantization_level": "Q4_1"
                 },
@@ -345,6 +346,7 @@
                     "format": "NPU2",
                     "family": "gemma4e-dflash-flash",
                     "think": true,
+                    "think_toggleable": true,
                     "parameter_size": "8B+0.36B",
                     "quantization_level": "Q4_1"
                 },

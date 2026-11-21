@@ -13,6 +13,9 @@ parent: Models
 - **Speed:** 1.3x to 1.9x the decode speed of `nemotron3.5-bolt:e4b`, from short prompts to 16k tokens of context
   ([benchmarks](https://fastflowlm.com/docs/benchmarks/nemotron3.5-bolt-dflash_results/))
 - **Think / Conversational mode / Tool Calling / Vision / Audio:** as `nemotron3.5-bolt:e4b`
+- **Thinking switch in the API:** both DFlash tags advertise `flm.think: true` in
+  `/v1/models?include=capabilities` and accept `think: true` or `think: false` on
+  `/v1/chat/completions`. The capability flag does not change the default.
 - **Packages:** two downloads. The main weights are the `nemotron3.5-bolt:e4b` package (`Nemotron-3.5-Bolt-E4B-NPU2`, about 8.5 GiB); the
   draft is [`Nemotron-3.5-Bolt-E4B-DFlash-NPU2`](https://huggingface.co/FastFlowLM/Nemotron-3.5-Bolt-E4B-DFlash-NPU2) (0.25 GiB).
   `flm pull nemotron3.5-bolt-dflash:e4b` downloads whichever is missing

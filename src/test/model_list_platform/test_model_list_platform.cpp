@@ -375,6 +375,15 @@ void test_model_capability_options() {
     TEST_REQUIRE(!single_turn.contains("context_window_override"));
 }
 
+void test_nemotron_dflash_thinking_capability() {
+    const auto catalog = read_json(kCatalogPath);
+    const auto absent = std::filesystem::path("test-model-metadata-absent");
+    for (const auto* family : {"nemotron3.5-bolt-dflash", "nemotron3.5-bolt-dflash-flash"}) {
+        const auto& entry = catalog.at("models").at(family).at("e4b");
+        TEST_REQUIRE(flm::model_capabilities(entry, absent, absent).at("think") == true);
+    }
+}
+
 void test_model_audio_capability() {
     using Json = nlohmann::json;
     const auto absent = std::filesystem::path("test-model-metadata-absent");
@@ -410,6 +419,7 @@ int main() {
     RunTest(test_platform_helpers, "platform helpers");
     RunTest(test_openai_models_opt_in, "OpenAI model capabilities are opt-in");
     RunTest(test_model_capability_options, "model metadata and request options");
+    RunTest(test_nemotron_dflash_thinking_capability, "both Nemotron DFlash tags advertise the thinking switch");
     RunTest(test_model_audio_capability, "audio input capability comes from catalog labels");
     RunTest(test_shipped_catalog_is_well_formed,
             "shipped catalog is well formed");
