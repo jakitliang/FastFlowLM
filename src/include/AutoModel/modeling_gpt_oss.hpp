@@ -41,6 +41,9 @@ public:
     chat_template_type_t get_chat_template_type() {
         return chat_template_type_t::harmony;
     }
+    bool thinking_enabled() const override {
+        return this->enable_think;
+    }
 
     /// \brief request settings the model loaded with (see AutoModel::save_request_settings)
     std::string loaded_reasoning_effort = default_reasoning_effort;
@@ -52,6 +55,13 @@ public:
     }
     /// \brief Override configure_parameter to handle GPT-oss-specific parameters
     bool configure_parameter(std::string parameter_name, const std::any& value) override {
+        if (parameter_name == "enable_think") {
+            if (const auto* enabled = std::any_cast<bool>(&value)) {
+                this->enable_think = *enabled;
+                return true;
+            }
+            return false;
+        }
         if (parameter_name == "reasoning_effort") {
             try {
                 this->reasoning_effort = std::any_cast<std::string>(value);

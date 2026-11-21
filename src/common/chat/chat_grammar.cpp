@@ -475,7 +475,9 @@ json harmony_format(const chat_constraint_request& request, const std::vector<to
         }
     }
     std::vector<json> message_tags;
-    message_tags.push_back(tag("<|channel|>analysis<|message|>", any_text(), FINAL_END));
+    if (request.allow_reasoning) {
+        message_tags.push_back(tag("<|channel|>analysis<|message|>", any_text(), FINAL_END));
+    }
     if (request.tool_choice == chat_tool_choice::AUTO || request.tool_choice == chat_tool_choice::NONE) {
         json final_content = has_response_format(request) ? schema_content(response_schema(request)) : any_text();
         message_tags.push_back(tag("<|channel|>final<|message|>", final_content, FINAL_END));
@@ -494,6 +496,9 @@ json harmony_format(const chat_constraint_request& request, const std::vector<to
     const bool one_call = !request.parallel_tool_calls || request.tool_choice == chat_tool_choice::FUNCTION;
     json calls = {{"type", "tags_with_separator"}, {"tags", call_tags}, {"separator", SEPARATOR},
                   {"at_least_one", true}, {"stop_after_first", one_call}};
+    if (message_tags.empty()) {
+        return calls;
+    }
     json messages = {{"type", "tags_with_separator"}, {"tags", message_tags}, {"separator", SEPARATOR},
                      {"at_least_one", true}};
     json messages_then_calls = sequence({messages, const_string(SEPARATOR), calls});
@@ -688,7 +693,8 @@ json chat_structural_tag(const chat_format_spec& spec, const chat_constraint_req
                               (request.tool_choice == chat_tool_choice::AUTO && !tools.empty() &&
                                !has_response_format(request) &&
                                (spec.has_tools() || spec.kind == chat_format_kind::HARMONY));
-    if (!tool_grammar && !has_response_format(request)) {
+    const bool harmony_without_reasoning = spec.kind == chat_format_kind::HARMONY && !request.allow_reasoning;
+    if (!tool_grammar && !has_response_format(request) && !harmony_without_reasoning) {
         return nullptr;
     }
     if (tool_grammar && tools.empty()) {
